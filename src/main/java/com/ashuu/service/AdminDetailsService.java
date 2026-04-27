@@ -1,46 +1,42 @@
 package com.ashuu.service;
 
-import org.springframework.security.core.userdetails.*;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.ashuu.model.Admin;
 import com.ashuu.repository.AdminRepository;
+import com.ashuu.security.UserPrincipal;
+
+import lombok.RequiredArgsConstructor;
 
 @Service
+@RequiredArgsConstructor
 public class AdminDetailsService implements UserDetailsService {
 
-    private final AdminRepository adminRepo;
-    private final BCryptPasswordEncoder passwordEncoder;
+	private final AdminRepository adminRepository;
 
-    public AdminDetailsService(AdminRepository adminRepo, BCryptPasswordEncoder passwordEncoder ) {
-        this.adminRepo = adminRepo;
-        this.passwordEncoder = passwordEncoder;
-    }
+	@Override
+	@Transactional(readOnly = true)
+	public UserDetails loadUserByUsername(String input) throws UsernameNotFoundException {
 
-    @Override
-    public UserDetails loadUserByUsername(String username)
-            throws UsernameNotFoundException {
+		Admin admin = adminRepository.findByUsername(input).or(() -> adminRepository.findByEmail(input.toLowerCase()))
+				.orElseThrow(() -> new UsernameNotFoundException("User not found"));
 
-        return adminRepo.findByUsername(username)
-            .map(admin -> User.builder()
-                .username(admin.getUsername())
-                .password(admin.getPassword())
-                .roles("ADMIN")
-                .build()
-            )
-            .orElseThrow(() ->
-                new UsernameNotFoundException("Admin not found")
-            );
-    }
-    
-    public void resetPassword(String username, String newPassword) {
+		return UserPrincipal.create(admin);
+	}
 
-    	Admin admin = adminRepo.findByUsername(username)
-                .orElseThrow(() -> new RuntimeException("Admin not found"));
+	public void resetPassword(String email, String newPassword) {
 
-        admin.setPassword(passwordEncoder.encode(newPassword));
-        adminRepo.save(admin);
-    }
+		Admin admin = adminRepository.findByEmail(email.toLowerCase())
+				.orElseThrow(() -> new UsernameNotFoundException("User not found"));
+
+		admin.setPassword(new BCryptPasswordEncoder().encode(newPassword));
+
+		adminRepository.save(admin);
+	}
 
 }

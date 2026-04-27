@@ -6,4 +6,6 @@ import com.ashuu.model.Resume;
 
 public interface ResumeRepository extends JpaRepository<Resume, Long> {
 
+	Resume findTopByOrderByUploadedAtDesc();
+
 }

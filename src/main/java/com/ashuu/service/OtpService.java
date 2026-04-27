@@ -1,5 +1,7 @@
 package com.ashuu.service;
 
+import com.ashuu.model.OtpPurpose;
+
 public interface OtpService {
 
 	/**
@@ -13,7 +15,7 @@ public interface OtpService {
 	 *                                                                with this
 	 *                                                                username
 	 */
-	String sendAdminOtp(String email);
+	String sendOtp(String email, OtpPurpose purpose);
 
 	/**
 	 * Step 2 — Validates the OTP for the given username. On success, internally
@@ -27,7 +29,7 @@ public interface OtpService {
 	 *                                                                is invalid or
 	 *                                                                expired
 	 */
-	String verifyAdminOtp(String email, String otp);
+	String verifyOtp(String email, String otp, OtpPurpose purpose);
 
 	/**
 	 * Step 3 guard — Returns true only if {@link #verifyAdminOtp(String, String)}
@@ -37,7 +39,7 @@ public interface OtpService {
 	 * @param username the admin username
 	 * @return true if OTP was verified and the verification window is still open
 	 */
-	boolean isOtpVerified(String email);
+	boolean isOtpVerified(String email, OtpPurpose purpose);
 
 	/**
 	 * Step 3 cleanup — Clears the OTP-verified flag after a successful password
@@ -45,5 +47,5 @@ public interface OtpService {
 	 *
 	 * @param username the admin username
 	 */
-	void clearOtpVerification(String email);
+	void clearOtpVerification(String email, OtpPurpose purpose);
 }

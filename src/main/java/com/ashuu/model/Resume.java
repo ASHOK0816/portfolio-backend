@@ -1,5 +1,7 @@
 package com.ashuu.model;
 
+import java.time.LocalDateTime;
+
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -17,6 +19,7 @@ public class Resume {
 	private String fileName;
 	private String fileType;
 	private String filePath;
+	private LocalDateTime uploadedAt;
 
 	public Resume() {
 	}
@@ -25,7 +28,7 @@ public class Resume {
 		this.fileName = fileName;
 		this.fileType = fileType;
 		this.filePath = filePath;
+		this.uploadedAt = LocalDateTime.now();
 	}
 
-	// getters setters
 }

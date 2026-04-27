@@ -1,5 +1,6 @@
 package com.ashuu.service.impl;
 
+import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -11,7 +12,7 @@ import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
-import com.ashuu.model.Admin;
+import com.ashuu.model.OtpPurpose;
 import com.ashuu.repository.AdminRepository;
 import com.ashuu.service.OtpService;
 
@@ -27,9 +28,10 @@ public class OtpServiceImpl implements OtpService {
 	private final AdminRepository adminRepository;
 	private final JavaMailSender mailSender;
 
-	// username → OTP entry
+	// key → OTP entry
 	private final Map<String, OtpEntry> otpStore = new ConcurrentHashMap<>();
-	// username → verified-until Instant
+
+	// key → verified-until
 	private final Map<String, Instant> verifiedStore = new ConcurrentHashMap<>();
 
 	public OtpServiceImpl(AdminRepository adminRepository, JavaMailSender mailSender) {
@@ -37,67 +39,103 @@ public class OtpServiceImpl implements OtpService {
 		this.mailSender = mailSender;
     }
 
-	// ── Step 1 ────────────────────────────────────────────────────────────────
-    @Override
-	public String sendAdminOtp(String email) {
+	// ─────────────────────────────────────────────
+	// STEP 1: SEND OTP
+	// ─────────────────────────────────────────────
+	@Override
+	public String sendOtp(String email, OtpPurpose purpose) {
 
-		// Look up admin — email lives on the Admin entity
-		Admin admin = adminRepository.findByUsername(email).orElseThrow(
-				() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No admin found with username: " + email));
+		String normalizedEmail = email.trim().toLowerCase();
+		String key = buildKey(normalizedEmail, purpose);
 
-		String otp = String.format("%06d", (int) (Math.random() * 1_000_000));
-		otpStore.put(email, new OtpEntry(otp, Instant.now().plusSeconds(otpExpirySeconds)));
+		boolean userExists = adminRepository.findByEmail(normalizedEmail).isPresent();
 
-		// Clear any leftover verified flag from a previous flow
-		verifiedStore.remove(email);
+		// Prevent user enumeration
+		if (purpose == OtpPurpose.RESET_PASSWORD && !userExists) {
+			return "If the account exists, an OTP has been sent";
+		}
 
-		sendEmail(admin.getEmail(), // ← from Admin entity
-				"Your Admin OTP", "Your OTP code is: " + otp + "\n\nIt expires in " + (otpExpirySeconds / 60)
-						+ " minutes." + "\nDo not share this code with anyone.");
+		// Rate limiting (30 seconds)
+		OtpEntry existing = otpStore.get(key);
+		if (existing != null && Instant.now().isBefore(existing.lastSentTime().plusSeconds(30))) {
 
-		return "OTP sent to " + maskEmail(admin.getEmail());
+			throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,
+					"Wait 30 seconds before requesting another OTP");
+		}
+
+		String otp = generateOtp();
+
+		otpStore.put(key, new OtpEntry(otp, Instant.now().plusSeconds(otpExpirySeconds), Instant.now()));
+
+		// Clear previous verification
+		verifiedStore.remove(key);
+
+		// Send only if valid
+		if (userExists || purpose == OtpPurpose.SIGNUP) {
+			sendEmail(normalizedEmail, "Your OTP Code", "Your OTP is: " + otp + "\nExpires in "
+					+ (otpExpirySeconds / 60) + " minutes.\n\nDo not share this code.");
+		}
+
+		return "If the account exists, an OTP has been sent";
 	}
 
-	// ── Step 2 ────────────────────────────────────────────────────────────────
+	// ─────────────────────────────────────────────
+	// STEP 2: VERIFY OTP
+	// ─────────────────────────────────────────────
 	@Override
-	public String verifyAdminOtp(String email, String otp) {
+	public String verifyOtp(String email, String otp, OtpPurpose purpose) {
 
-		OtpEntry entry = otpStore.get(email);
+		String key = buildKey(email, purpose);
 
-		// Single error — don't reveal whether email or OTP was wrong
+		OtpEntry entry = otpStore.get(key);
+
 		if (entry == null || Instant.now().isAfter(entry.expiry()) || !entry.otp().equals(otp)) {
+
 			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid or expired OTP");
-        }
+		}
 
-		// Consume OTP so it cannot be reused
-		otpStore.remove(email);
+		// Consume OTP
+		otpStore.remove(key);
 
-		// Open the verified window for reset-password
-		verifiedStore.put(email, Instant.now().plusSeconds(verifiedWindowSeconds));
+		// Mark verified
+		verifiedStore.put(key, Instant.now().plusSeconds(verifiedWindowSeconds));
 
 		return "OTP verified successfully";
 	}
 
-	// ── Step 3 guard ──────────────────────────────────────────────────────────
+	// ─────────────────────────────────────────────
+	// STEP 3: CHECK VERIFIED
+	// ─────────────────────────────────────────────
 	@Override
-	public boolean isOtpVerified(String email) {
-		Instant expiry = verifiedStore.get(email);
+	public boolean isOtpVerified(String email, OtpPurpose purpose) {
+
+		String key = buildKey(email, purpose);
+
+		Instant expiry = verifiedStore.get(key);
+
 		if (expiry == null)
 			return false;
+
 		if (Instant.now().isAfter(expiry)) {
-			verifiedStore.remove(email);
+			verifiedStore.remove(key);
 			return false;
 		}
-		return true;
-    }
 
-	// ── Step 3 cleanup ────────────────────────────────────────────────────────
-    @Override
-	public void clearOtpVerification(String email) {
-		verifiedStore.remove(email);
+		return true;
 	}
 
-	// ── Mail ──────────────────────────────────────────────────────────────────
+	// ─────────────────────────────────────────────
+	// STEP 4: CLEAR VERIFIED
+	// ─────────────────────────────────────────────
+	@Override
+	public void clearOtpVerification(String email, OtpPurpose purpose) {
+		String key = buildKey(email, purpose);
+		verifiedStore.remove(key);
+	}
+
+	// ─────────────────────────────────────────────
+	// UTIL: SEND EMAIL
+	// ─────────────────────────────────────────────
 	private void sendEmail(String to, String subject, String body) {
 		try {
 			SimpleMailMessage msg = new SimpleMailMessage();
@@ -106,20 +144,27 @@ public class OtpServiceImpl implements OtpService {
 			msg.setText(body);
 			mailSender.send(msg);
 		} catch (Exception e) {
-			System.err.println("Mail send failed to " + to + ": " + e.getMessage());
 			throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to send OTP email");
         }
 	}
 
-	// Masks "admin@example.com" → "a***@example.com"
-	private String maskEmail(String email) {
-		if (email == null || !email.contains("@"))
-			return "***";
-		String[] parts = email.split("@", 2);
-		return parts[0].charAt(0) + "***@" + parts[1];
+	// ─────────────────────────────────────────────
+	// UTIL: GENERATE OTP (SECURE)
+	// ─────────────────────────────────────────────
+	private String generateOtp() {
+		return String.valueOf(100000 + new SecureRandom().nextInt(900000));
     }
 
-	// Holds OTP code + its expiry timestamp
-	private record OtpEntry(String otp, Instant expiry) {
+	// ─────────────────────────────────────────────
+	// UTIL: UNIQUE KEY
+	// ─────────────────────────────────────────────
+	private String buildKey(String email, OtpPurpose purpose) {
+		return email.trim().toLowerCase() + ":" + purpose.name();
+	}
+
+	// ─────────────────────────────────────────────
+	// INTERNAL RECORD
+	// ─────────────────────────────────────────────
+	private record OtpEntry(String otp, Instant expiry, Instant lastSentTime) {
 	}
 }

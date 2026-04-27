@@ -3,9 +3,9 @@ package com.ashuu.dto;
 import lombok.Data;
 
 @Data
-public class SendOtpRequest {
+public class SignupRequestDTO {
 
 	private String username;
 	private String email;
-
+	private String password;
 }

@@ -2,22 +2,21 @@ package com.ashuu.dto;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
-import lombok.Data;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-@Data
 @Getter
 @Setter
 @AllArgsConstructor
 @NoArgsConstructor
 @Builder
-public class EducationDTO {
+public class ExperienceDTO {
 
-    private Long id;
-    private String degree;
-    private String college;
-	private String startYear;
-	private String endYear;
+	private Long id;
+	private String title;
+	private String company;
+	private String startDate;
+	private String endDate;
+	private String description;
 }
