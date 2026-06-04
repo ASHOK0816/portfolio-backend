@@ -49,6 +49,9 @@ DB_URL=your_database_url
 DB_USERNAME=your_username
 DB_PASSWORD=your_password
 JWT_SECRET=your_secret_key
+JWT_EXPIRATION=your_token_expiration_time
+REFRESH_TOKEN_EXPIRATION=your_refresh_token_expiration_time
+SIGNUP_SECRET=your_signup_secret_key
 EMAIL_USERNAME=your_email
 EMAIL_PASSWORD=your_email_password
 ```
