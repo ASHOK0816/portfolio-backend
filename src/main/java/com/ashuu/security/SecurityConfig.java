@@ -57,6 +57,9 @@ public class SecurityConfig {
 						.requestMatchers("/ws/info/**").permitAll().requestMatchers("/ws/info").permitAll()
 						.requestMatchers("/uploads/**").permitAll()
 
+						// ✅ Allow PDF preview without token
+						.requestMatchers(HttpMethod.GET, "/api/resume/view/**").permitAll()
+
 						// GET → USER + ADMIN
 						.requestMatchers(HttpMethod.GET, "/api/**").hasAnyAuthority("ROLE_USER", "ROLE_ADMIN")
 

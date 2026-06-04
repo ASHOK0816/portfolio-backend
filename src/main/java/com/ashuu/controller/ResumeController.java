@@ -2,14 +2,17 @@ package com.ashuu.controller;
 
 import java.io.File;
 import java.io.FileInputStream;
-import java.util.Optional;
+import java.util.List;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.CrossOrigin;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -22,6 +25,7 @@ import com.ashuu.service.FileStorageService;
 
 @RestController
 @RequestMapping("/api/resume")
+@CrossOrigin("*")
 public class ResumeController {
 
 	@Autowired
@@ -30,32 +34,46 @@ public class ResumeController {
 	@Autowired
 	private FileRepository repository;
 
-	// Upload Resume
+	// ================= UPLOAD =================
 	@PostMapping("/upload")
 	public ResponseEntity<?> uploadResume(@RequestParam("file") MultipartFile file) throws Exception {
 
-		// delete old resume if exists
-		Optional<FileData> oldResume = repository.findByFolder("resume");
-
-		if (oldResume.isPresent()) {
-			File oldFile = new File(oldResume.get().getFilePath());
-			if (oldFile.exists()) {
-				oldFile.delete();
-			}
-			repository.delete(oldResume.get());
-		}
-
 		FileData fileData = fileStorageService.uploadFile(file, "resume");
 
-		return ResponseEntity.ok(fileData);
+		FileData saved = repository.save(fileData);
+
+		return ResponseEntity.ok(saved);
 	}
 
-	// Download Resume
-	@GetMapping("/download")
-	public ResponseEntity<InputStreamResource> downloadResume() throws Exception {
+	// ================= GET ALL =================
+	@GetMapping
+	public ResponseEntity<List<FileData>> getAllResumes() {
+		return ResponseEntity.ok(repository.findByFolder("resume"));
+	}
 
-		FileData fileData = repository.findByFolder("resume")
-				.orElseThrow(() -> new RuntimeException("Resume not found"));
+	// ================= PREVIEW (INLINE PDF) =================
+	@GetMapping("/view/{id}")
+	public ResponseEntity<InputStreamResource> viewResume(@PathVariable Long id) throws Exception {
+
+		FileData fileData = repository.findById(id).orElseThrow(() -> new RuntimeException("Resume not found"));
+
+	    if (!"resume".equals(fileData.getFolder())) {
+	        throw new RuntimeException("Not a resume file");
+	    }
+
+		File file = new File(fileData.getFilePath());
+
+		InputStreamResource resource = new InputStreamResource(new FileInputStream(file));
+
+		return ResponseEntity.ok().header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=" + fileData.getFileName())
+				.contentType(MediaType.APPLICATION_PDF).body(resource);
+	}
+
+	// ================= DOWNLOAD =================
+	@GetMapping("/download/{id}")
+	public ResponseEntity<InputStreamResource> downloadResume(@PathVariable Long id) throws Exception {
+
+		FileData fileData = repository.findById(id).orElseThrow(() -> new RuntimeException("Resume not found"));
 
 		File file = new File(fileData.getFilePath());
 
@@ -63,6 +81,21 @@ public class ResumeController {
 
         return ResponseEntity.ok()
 				.header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=" + fileData.getFileName())
-				.contentType(MediaType.parseMediaType(fileData.getFileType())).body(resource);
-    }
+				.contentType(MediaType.APPLICATION_PDF).body(resource);
+	}
+
+	// ================= DELETE =================
+	@DeleteMapping("/{id}")
+	public ResponseEntity<?> deleteResume(@PathVariable Long id) {
+
+		FileData fileData = repository.findById(id).orElseThrow(() -> new RuntimeException("Resume not found"));
+
+		if (!"resume".equals(fileData.getFolder())) {
+			return ResponseEntity.badRequest().body("Not a resume file");
+		}
+
+		fileStorageService.deleteFile(fileData.getFileUrl());
+
+		return ResponseEntity.ok("Deleted successfully");
+	}
 }

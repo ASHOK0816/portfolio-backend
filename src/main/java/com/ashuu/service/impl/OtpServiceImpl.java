@@ -7,13 +7,12 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
-import org.springframework.mail.SimpleMailMessage;
-import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
 import com.ashuu.model.OtpPurpose;
 import com.ashuu.repository.AdminRepository;
+import com.ashuu.service.EmailService;
 import com.ashuu.service.OtpService;
 
 @Service
@@ -26,7 +25,7 @@ public class OtpServiceImpl implements OtpService {
 	private long verifiedWindowSeconds;
 
 	private final AdminRepository adminRepository;
-	private final JavaMailSender mailSender;
+	private final EmailService emailService;
 
 	// key → OTP entry
 	private final Map<String, OtpEntry> otpStore = new ConcurrentHashMap<>();
@@ -34,10 +33,10 @@ public class OtpServiceImpl implements OtpService {
 	// key → verified-until
 	private final Map<String, Instant> verifiedStore = new ConcurrentHashMap<>();
 
-	public OtpServiceImpl(AdminRepository adminRepository, JavaMailSender mailSender) {
+	public OtpServiceImpl(AdminRepository adminRepository, EmailService emailService) {
 		this.adminRepository = adminRepository;
-		this.mailSender = mailSender;
-    }
+		this.emailService = emailService;
+	}
 
 	// ─────────────────────────────────────────────
 	// STEP 1: SEND OTP
@@ -72,8 +71,7 @@ public class OtpServiceImpl implements OtpService {
 
 		// Send only if valid
 		if (userExists || purpose == OtpPurpose.SIGNUP) {
-			sendEmail(normalizedEmail, "Your OTP Code", "Your OTP is: " + otp + "\nExpires in "
-					+ (otpExpirySeconds / 60) + " minutes.\n\nDo not share this code.");
+			emailService.sendOtpEmail(normalizedEmail, otp);
 		}
 
 		return "If the account exists, an OTP has been sent";
@@ -131,21 +129,6 @@ public class OtpServiceImpl implements OtpService {
 	public void clearOtpVerification(String email, OtpPurpose purpose) {
 		String key = buildKey(email, purpose);
 		verifiedStore.remove(key);
-	}
-
-	// ─────────────────────────────────────────────
-	// UTIL: SEND EMAIL
-	// ─────────────────────────────────────────────
-	private void sendEmail(String to, String subject, String body) {
-		try {
-			SimpleMailMessage msg = new SimpleMailMessage();
-			msg.setTo(to);
-			msg.setSubject(subject);
-			msg.setText(body);
-			mailSender.send(msg);
-		} catch (Exception e) {
-			throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to send OTP email");
-        }
 	}
 
 	// ─────────────────────────────────────────────

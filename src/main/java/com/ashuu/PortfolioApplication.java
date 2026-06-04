@@ -7,6 +7,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 public class PortfolioApplication {
 
 	public static void main(String[] args) {
+		System.out.println("NEW BUILD");
 		SpringApplication.run(PortfolioApplication.class, args);
 	}
 

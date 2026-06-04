@@ -27,7 +27,11 @@ public class FileStorageService {
 
 	private static final long MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
 
-	private static final Set<String> ALLOWED_TYPES = Set.of("image/jpeg", "image/png", "image/gif", "image/webp");
+	private static final Set<String> ALLOWED_TYPES = Set.of("image/jpeg", "image/png", "image/webp",
+
+			// ✅ Resume formats
+			"application/pdf", "application/msword",
+			"application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
 	@Autowired
 	private FileRepository repository;
@@ -36,49 +40,49 @@ public class FileStorageService {
 	public FileData uploadFile(MultipartFile file, String folder) throws IOException {
 
 		String contentType = file.getContentType();
+
 		if (contentType == null || !ALLOWED_TYPES.contains(contentType)) {
 			throw new RuntimeException("File type not allowed: " + contentType);
 		}
 
-		if (file.isEmpty() || file.getSize() == 0) {
+		if (file.isEmpty()) {
 			throw new RuntimeException("File is empty");
 		}
+
 		if (file.getSize() > MAX_FILE_SIZE) {
-			throw new RuntimeException("File exceeds maximum size of 5 MB");
+			throw new RuntimeException("File exceeds 5MB");
+		}
+
+		// ✅ Restrict resume types only
+		if (folder.equals("resume")) {
+			if (!contentType.equals("application/pdf") && !contentType.equals("application/msword")
+					&& !contentType.equals("application/vnd.openxmlformats-officedocument.wordprocessingml.document")) {
+
+				throw new RuntimeException("Only PDF/DOC/DOCX allowed for resume");
+			}
 		}
 
 		String safeFolder = sanitizePathSegment(folder);
-		String originalName = file.getOriginalFilename();
-		String safeOriginalName = (originalName == null || originalName.isBlank()) ? "file"
-				: Paths.get(originalName).getFileName().toString();
-		String safeFileName = sanitizePathSegment(safeOriginalName);
 
 		Path basePath = Paths.get(baseDir).toAbsolutePath().normalize();
-		Path uploadPath = basePath.resolve(safeFolder).normalize();
-
-		if (!uploadPath.startsWith(basePath)) {
-			throw new SecurityException("Path traversal detected in folder name");
-		}
+		Path uploadPath = basePath.resolve(safeFolder);
 
 		Files.createDirectories(uploadPath);
 
-		String uniqueFileName = UUID.randomUUID() + "_" + safeFileName;
-		Path filePath = uploadPath.resolve(uniqueFileName).normalize();
-
-		if (!filePath.startsWith(uploadPath)) {
-			throw new SecurityException("Path traversal detected in file name");
-		}
+		String fileName = UUID.randomUUID() + "_" + file.getOriginalFilename();
+		Path filePath = uploadPath.resolve(fileName);
 
 		Files.copy(file.getInputStream(), filePath, StandardCopyOption.REPLACE_EXISTING);
 
-		FileData fileData = new FileData();
-		fileData.setFileName(uniqueFileName);
-		fileData.setFileType(contentType);
-		fileData.setFilePath(filePath.toString());
-		fileData.setFileUrl("/uploads/" + safeFolder + "/" + uniqueFileName);
-		fileData.setSize(file.getSize());
+		FileData data = new FileData();
+		data.setFileName(fileName);
+		data.setFileType(contentType);
+		data.setFilePath(filePath.toString());
+		data.setFileUrl("/uploads/" + safeFolder + "/" + fileName);
+		data.setSize(file.getSize());
+		data.setFolder(folder);
 
-		return repository.save(fileData);
+		return repository.save(data);
 	}
 
 	// ── Upload and replace old file (Fix 2: old image is now deleted) ─────────
